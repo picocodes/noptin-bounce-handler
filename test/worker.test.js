@@ -15,7 +15,8 @@ test('forwards hard bounces and complaints, ignores soft bounces and other event
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     assert.equal(url, env.NOPTIN_BOUNCE_URL);
     assert.equal(options.method, 'POST');
-    assert.equal(options.redirect, 'error');
+    assert.equal(options.redirect, 'manual');
+    assert.equal(options.headers['User-Agent'], 'Noptin-Cloudflare-Bounce-Handler/1.0');
     sent.push(JSON.parse(options.body));
     return Response.json(true);
   });
@@ -49,4 +50,21 @@ test('invalid JSON and missing or insecure secret are retried', async (t) => {
     assert.equal(m.acked, false);
     assert.deepEqual(m.retried, { delaySeconds: 300 });
   }
+});
+
+test('logs HTTP diagnostics but redacts the endpoint and token', async (t) => {
+  const logger = t.mock.method(console, 'error', () => {});
+  const secret = 'https://example.com/wp-json/noptin/v1/bounce_handler/cloudflare/unique-secret-123';
+  t.mock.method(globalThis, 'fetch', async () => new Response('Denied: ' + secret + ' unique-secret-123', {
+    status: 403, headers: { 'cf-ray': 'example-ray' },
+  }));
+  const m = message(hard);
+  await worker.queue({ messages: [m] }, { NOPTIN_BOUNCE_URL: secret });
+  const [summary, details] = logger.mock.calls[0].arguments;
+  assert.match(summary, /HTTP 403/);
+  assert.equal(details.httpStatus, 403);
+  assert.equal(details.responseHeaders['cf-ray'], 'example-ray');
+  assert.match(details.responseBody, /Denied/);
+  assert.ok(!JSON.stringify(logger.mock.calls[0].arguments).includes('unique-secret-123'));
+  assert.deepEqual(m.retried, { delaySeconds: 300 });
 });
