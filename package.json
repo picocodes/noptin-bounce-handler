@@ -1,0 +1,20 @@
+{
+  "name": "noptin-bounce-handler",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  },
+  "cloudflare": {
+    "bindings": {
+      "NOPTIN_BOUNCE_URL": {
+        "description": "Paste the Cloudflare bounce handler URL copied from Noptin in your WordPress dashboard."
+      }
+    }
+  }
+}

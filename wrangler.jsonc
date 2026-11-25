@@ -1,0 +1,18 @@
+{
+  "name": "noptin-bounce-handler",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-25",
+  "workers_dev": false,
+  "preview_urls": false,
+  "queues": {
+    "consumers": [
+      {
+        "queue": "noptin-bounces",
+        "max_batch_size": 10,
+        "max_retries": 100,
+        "retry_delay": 300,
+        "dead_letter_queue": "noptin-bounces-failed"
+      }
+    ]
+  }
+}
