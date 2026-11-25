@@ -49,7 +49,7 @@ Queues provide at-least-once delivery; duplicate deliveries are possible.
 
 ## Security
 
-Never commit the bounce handler URL. Store it as a Worker secret or in an ignored local `.dev.vars` file. The Worker does not explicitly log URLs, email addresses or event bodies. Review Cloudflare logging and tracing settings separately.
+Never commit the bounce handler URL. Store it as a Worker secret or in an ignored local `.dev.vars` file. Requests use the User-Agent `Noptin-Cloudflare-Bounce-Handler/1.0`. Failure logs include HTTP status, selected response headers, a redacted response excerpt (up to 4,000 characters), error details, queue message ID and retry information. Incoming event bodies are not logged. Response excerpts may contain personal data; restrict log access. The Worker attempts to redact the endpoint and security code from diagnostic strings. Automatic tracing is disabled because outbound fetch spans may capture the secret URL.
 
 ## Tests
 
