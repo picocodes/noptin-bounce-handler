@@ -1,54 +1,93 @@
+
 export default {
-  /**
-   * Forwards hard bounces and complaints, retrying failed deliveries individually.
-   * @param {MessageBatch} batch Cloudflare Email Sending event messages.
-   * @param {object} env Worker bindings.
-   */
-  async queue( batch, env ) {
-    for ( const message of batch.messages ) {
-      try {
-        const event = typeof message.body === 'string'
-          ? JSON.parse( message.body )
-          : message.body;
+    async queue(batch, env) {
+        for (const message of batch.messages) {
+            let stage = 'parse_event';
+            let httpStatus = null;
 
-        const isComplaint =
-          event?.type === 'cf.email.sending.message.complained';
+            try {
+                const event = typeof message.body === 'string'
+                    ? JSON.parse(message.body)
+                    : message.body;
 
-        const isHardBounce =
-          event?.type === 'cf.email.sending.message.bounced' &&
-          event?.payload?.bounce?.type === 'hard';
+                const isComplaint =
+                    event?.type === 'cf.email.sending.message.complained';
 
-        if ( !isComplaint && !isHardBounce ) {
-          message.ack();
-          continue;
+                const isHardBounce =
+                    event?.type === 'cf.email.sending.message.bounced' &&
+                    event?.payload?.bounce?.type === 'hard';
+
+                if (!isComplaint && !isHardBounce) {
+                    message.ack();
+                    continue;
+                }
+
+                stage = 'check_secret';
+
+                if (!env.NOPTIN_BOUNCE_URL?.trim()) {
+                    throw new Error('Missing endpoint');
+                }
+
+                stage = 'validate_endpoint';
+
+                const endpoint = new URL(env.NOPTIN_BOUNCE_URL);
+
+                if (
+                    endpoint.protocol !== 'https:' ||
+                    endpoint.username ||
+                    endpoint.password
+                ) {
+                    throw new Error('Invalid endpoint');
+                }
+
+                stage = 'http_request';
+
+                const response = await fetch(endpoint.href, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                    body: JSON.stringify(event),
+                    redirect: 'manual',
+                    signal: AbortSignal.timeout(15000),
+                });
+
+                httpStatus = response.status;
+
+                stage = 'check_http_status';
+
+                if (!response.ok) {
+                    throw new Error('HTTP request unsuccessful');
+                }
+
+                stage = 'parse_response';
+
+                const result = await response.json();
+
+                stage = 'check_acknowledgement';
+
+                if (result !== true) {
+                    throw new Error('Invalid acknowledgement');
+                }
+
+                stage = 'acknowledge_message';
+
+                message.ack();
+
+                console.log('Event successfully forwarded to Noptin.');
+
+            } catch (error) {
+                console.warn('Noptin bounce delivery failed; retrying.', {
+                    stage,
+                    httpStatus,
+                    errorType: error?.name || 'Error',
+                    attempt: message.attempts,
+                    retryDelay: 300,
+                });
+
+                message.retry({ delaySeconds: 300 });
+            }
         }
-
-        const endpoint = new URL( env.NOPTIN_BOUNCE_URL );
-        if ( endpoint.protocol !== 'https:' || endpoint.username || endpoint.password ) {
-          throw new Error( 'Invalid bounce handler URL.' );
-        }
-
-        const response = await fetch( endpoint.href, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'application/json',
-          },
-          body: JSON.stringify( event ),
-          redirect: 'error',
-          signal: AbortSignal.timeout( 15000 ),
-        } );
-
-        if ( !response.ok || await response.json() !== true ) {
-          throw new Error( 'Noptin did not acknowledge the event.' );
-        }
-
-        console.log( 'Event successfully forwarded to Noptin.' );
-        message.ack();
-      } catch {
-        console.warn( 'Noptin bounce delivery failed; retrying.' );
-        message.retry( { delaySeconds: 300 } );
-      }
-    }
-  },
+    },
 };
