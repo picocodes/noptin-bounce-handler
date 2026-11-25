@@ -14,5 +14,11 @@
         "dead_letter_queue": "noptin-bounces-failed"
       }
     ]
+  },
+"observability": {
+    "logs": {
+      "enabled": false,
+      "invocation_logs": true
+    }
   }
 }
